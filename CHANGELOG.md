@@ -14,6 +14,16 @@ This file is updated upon each release.
 Changes since the last release can be found at <https://github.com/emilk/egui/compare/latest...HEAD> or by running the `scripts/generate_changelog.py` script.
 
 
+
+## openOMSI fork (`openomsi/v0.35`)
+
+This is [openOMSI](https://github.com/openOMSI-org/openOMSI)'s fork of egui, based on the
+0.35.0 release and used with [wgpu-openomsi](https://github.com/openOMSI-org/wgpu-openomsi)
+(wgpu 29). Patches live on topic branches `oo/<area>` merged into `openomsi/v0.35`, each a
+focused, upstreamable change; they are listed here.
+
+* (none yet)
+
 ## 0.35.0 - 2026-06-25 - Inspection, egui_mcp, classes and improved IME
 
 ### Highlights 
