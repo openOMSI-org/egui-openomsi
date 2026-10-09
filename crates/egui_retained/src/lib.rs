@@ -46,6 +46,7 @@
 )]
 
 mod element;
+pub mod icons;
 pub mod input;
 mod paint;
 #[cfg(feature = "wgpu")]

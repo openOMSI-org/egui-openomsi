@@ -158,9 +158,22 @@ pub struct PaintCx<'a> {
     pub repaint_after: &'a mut Option<f32>,
     /// Where the pointer is.
     pub pointer: Option<Pos2>,
+    pub textures: &'a mut crate::icons::Textures,
 }
 
 impl PaintCx<'_> {
+    /// Icon `name` centred in `rect` at `size` points, in `color`.
+    pub fn icon(&mut self, name: &str, center: Pos2, size: f32, color: ecolor::Color32) {
+        let px = (size * self.ppp).round().max(4.0) as u32;
+        if let Some(t) = self.textures.icon(name, px) {
+            let d = px as f32 / self.ppp;
+            let r = Rect::from_center_size(center, Vec2::splat(d));
+            // (on whole pixels: a mask drawn between them is blurred)
+            let r = Rect::from_min_size(Pos2::new((r.min.x * self.ppp).round() / self.ppp, (r.min.y * self.ppp).round() / self.ppp), r.size());
+            self.painter.image(t, r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), color, 0.0);
+        }
+    }
+
     pub fn layout_text(&mut self, text: &str, wrap: Option<f32>) -> Arc<epaint::Galley> {
         crate::paint::layout_text(self.fonts, self.ppp, text, self.look.font_id(self.theme), self.look.color, wrap)
     }

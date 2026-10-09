@@ -116,7 +116,7 @@ pub struct Ui {
     repaint: bool,
     deferred: Vec<Box<dyn FnOnce(&mut Ui)>>,
     tooltip: Option<(NodeId, f64)>,
-    tex_manager: epaint::textures::TextureManager,
+    pub(crate) textures: crate::icons::Textures,
     font_texture: Option<TextureId>,
     tess: epaint::TessellationOptions,
     output: PlatformOutput,
@@ -187,7 +187,7 @@ impl Ui {
             repaint: true,
             deferred: Vec::new(),
             tooltip: None,
-            tex_manager,
+            textures: crate::icons::Textures::new(tex_manager),
             font_texture,
             tess: epaint::TessellationOptions::default(),
             output: PlatformOutput::default(),
@@ -542,7 +542,7 @@ impl Ui {
     pub fn set_fonts(&mut self, defs: epaint::text::FontDefinitions) {
         self.fonts = epaint::Fonts::new(epaint::text::TextOptions::default(), defs);
         if let Some(id) = self.font_texture {
-            self.tex_manager.set(id, epaint::ImageDelta::full(epaint::ImageData::Color(std::sync::Arc::new(self.fonts.image())), epaint::textures::TextureOptions::LINEAR));
+            self.textures.manager.set(id, epaint::ImageDelta::full(epaint::ImageData::Color(std::sync::Arc::new(self.fonts.image())), epaint::textures::TextureOptions::LINEAR));
         }
         for n in self.walk_all() {
             let _ = self.tree.mark_dirty(n.0);
@@ -596,7 +596,7 @@ impl Ui {
         // the fonts' atlas, then shapes to triangles
         if let Some(delta) = self.fonts.font_image_delta() {
             if let Some(id) = self.font_texture {
-                self.tex_manager.set(id, delta);
+                self.textures.manager.set(id, delta);
             }
         }
         let font_size = self.fonts.font_image_size();
@@ -615,7 +615,7 @@ impl Ui {
         if self.needs_repaint() {
             after = Some(0.0);
         }
-        Frame { primitives, textures: self.tex_manager.take_delta(), platform, repaint_after: after, pixels_per_point: self.ppp }
+        Frame { primitives, textures: self.textures.manager.take_delta(), platform, repaint_after: after, pixels_per_point: self.ppp }
     }
 
     fn run_deferred(&mut self) {
@@ -1148,6 +1148,7 @@ impl Ui {
         let pointer = self.pointer;
         let (theme, ppp) = (&self.theme, self.ppp);
         let fonts = &mut self.fonts;
+        let textures = &mut self.textures;
         let Ok(layout) = self.tree.layout(node).cloned() else { return };
         let Some(d) = self.tree.get_node_context_mut(node) else { return };
         if !d.visible || !d.clip.is_positive() && d.scroll.is_none() && d.rect.area() > 0.0 {
@@ -1179,7 +1180,7 @@ impl Ui {
             d.rect.min + Vec2::new(layout.border.left + layout.padding.left, layout.border.top + layout.padding.top),
             d.rect.max - Vec2::new(layout.border.right + layout.padding.right, layout.border.bottom + layout.padding.bottom),
         );
-        let mut cx = PaintCx { node: NodeId(node), rect: d.rect, content, look: &look, state: d.state, painter, fonts, ppp, theme, time, repaint_after, pointer };
+        let mut cx = PaintCx { node: NodeId(node), rect: d.rect, content, look: &look, state: d.state, painter, fonts, ppp, theme, time, repaint_after, pointer, textures };
         d.element.paint(&mut cx);
         let (rect, clip, scroll) = (d.rect, d.clip, d.scroll);
         self.order.push((NodeId(node), clip));
@@ -1208,6 +1209,12 @@ impl Ui {
 
     /// A texture the application registered with its renderer (`egui_wgpu::Renderer::
     /// register_native_texture` gives the id), for [`crate::widgets::Image`].
+    /// Where icons come from: `f(name, px)` gives an icon's alpha mask, `px` x `px` bytes.
+    pub fn set_icon_source(&mut self, f: impl Fn(&str, u32) -> Option<Vec<u8>> + 'static) {
+        self.textures.set_source(Box::new(f));
+        self.repaint = true;
+    }
+
     pub fn texture_id(&self, user: u64) -> TextureId {
         TextureId::User(user)
     }

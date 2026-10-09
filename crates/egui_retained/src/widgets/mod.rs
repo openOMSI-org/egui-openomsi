@@ -158,15 +158,14 @@ impl Element for Text {
     }
 }
 
-/// A glyph of an icon font (the theme's `"icon"` class names the family): Material Icons'
-/// ligature-free code points, for example.
+/// An icon by name (see [`Ui::set_icon_source`]), at the node's font size, in its colour.
 pub struct Icon {
-    pub glyph: String,
+    pub name: String,
 }
 
 impl Icon {
-    pub fn new(glyph: impl Into<String>) -> Icon {
-        Icon { glyph: glyph.into() }
+    pub fn new(name: impl Into<String>) -> Icon {
+        Icon { name: name.into() }
     }
 }
 
@@ -175,14 +174,13 @@ impl Element for Icon {
         "icon"
     }
     fn measure(&mut self, cx: &mut MeasureCx<'_>, _k: [Option<f32>; 2], _a: [Option<f32>; 2]) -> Vec2 {
-        let s = cx.look.font_size;
-        Vec2::splat(s)
+        Vec2::splat(cx.look.font_size * 1.3)
     }
     fn paint(&mut self, cx: &mut PaintCx<'_>) {
-        let g = cx.layout_text(&self.glyph, None);
-        let at = cx.content.center() - g.size() * 0.5;
-        let c = cx.look.color;
-        cx.painter.galley(at, g, c);
+        let (c, s) = (cx.look.color, cx.look.font_size * 1.3);
+        let center = cx.content.center();
+        let name = self.name.clone();
+        cx.icon(&name, center, s, c);
     }
     fn hit_test(&self) -> bool {
         false
@@ -218,15 +216,12 @@ impl Button {
         self
     }
 
-    fn parts(&self, cx_fonts: &mut epaint::Fonts, ppp: f32, look: &crate::Look, theme: &crate::Theme) -> (Vec2, Option<std::sync::Arc<epaint::Galley>>, std::sync::Arc<epaint::Galley>) {
+    fn parts(&self, cx_fonts: &mut epaint::Fonts, ppp: f32, look: &crate::Look, theme: &crate::Theme) -> (Vec2, f32, std::sync::Arc<epaint::Galley>) {
         let text = crate::paint::layout_text(cx_fonts, ppp, &self.text, look.font_id(theme), look.color, None);
-        let icon = self.icon.as_ref().map(|g| {
-            let fam = theme.rules.get("icon").and_then(|r| r.visual.font.clone()).unwrap_or_else(|| look.font.clone());
-            crate::paint::layout_text(cx_fonts, ppp, g, epaint::FontId::new(look.font_size * 1.25, fam), look.color, None)
-        });
-        let gap = if icon.is_some() && !self.text.is_empty() { 8.0 } else { 0.0 };
-        let w = text.size().x + icon.as_ref().map_or(0.0, |i| i.size().x) + gap;
-        let h = text.size().y.max(icon.as_ref().map_or(0.0, |i| i.size().y));
+        let icon = if self.icon.is_some() { look.font_size * 1.3 } else { 0.0 };
+        let gap = if icon > 0.0 && !self.text.is_empty() { 8.0 } else { 0.0 };
+        let w = if self.text.is_empty() { 0.0 } else { text.size().x } + icon + gap;
+        let h = text.size().y.max(icon);
         (Vec2::new(w, h), icon, text)
     }
 }
@@ -252,13 +247,14 @@ impl Element for Button {
         };
         let cy = cx.content.center().y;
         let color = cx.look.color;
-        if let Some(i) = icon {
-            let w = i.size().x;
-            cx.painter.galley(Pos2::new(x, cy - i.size().y * 0.5), i, color);
-            x += w + 8.0;
+        if let Some(name) = self.icon.clone() {
+            cx.icon(&name, Pos2::new(x + icon * 0.5, cy), icon, color);
+            x += icon + 8.0;
         }
-        let th = text.size().y;
-        cx.painter.galley(Pos2::new(x, cy - th * 0.5), text, color);
+        if !self.text.is_empty() {
+            let th = text.size().y;
+            cx.painter.galley(Pos2::new(x, cy - th * 0.5), text, color);
+        }
     }
     fn event(&mut self, cx: &mut EventCx<'_>, event: &Event) -> bool {
         if let Event::Key { key: Key::Enter | Key::Space, pressed: true, .. } = event {
