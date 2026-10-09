@@ -125,6 +125,13 @@ impl Element for Text {
     fn class(&self) -> &'static str {
         self.class
     }
+    fn layout(&self, s: &mut taffy::Style) {
+        // (a line of text gives way when its row is too narrow - its end then reads "…" -
+        // instead of running over what stands beside it)
+        if !self.wrap {
+            s.min_size.width = taffy::Dimension::length(0.0);
+        }
+    }
     fn measure(&mut self, cx: &mut MeasureCx<'_>, known: [Option<f32>; 2], available: [Option<f32>; 2]) -> Vec2 {
         let wrap = if self.wrap { known[0].or(available[0]) } else { None };
         let g = cx.layout_text(&self.text, wrap);
@@ -134,21 +141,35 @@ impl Element for Text {
                 s.x = w;
             }
         }
-        // (an empty text keeps its line's height)
+        // (an empty text keeps its line's height; a line is measured to the next whole point
+        // and one more, so that rounding never cuts its last letter off)
         s.y = s.y.max(cx.look.font_size * 1.2);
+        if !self.wrap {
+            s.x = s.x.ceil() + 1.0;
+        }
         s
     }
     fn paint(&mut self, cx: &mut PaintCx<'_>) {
         let wrap = self.wrap.then_some(cx.content.width());
-        let g = cx.layout_text(&self.text, wrap);
+        let mut g = cx.layout_text(&self.text, wrap);
+        if !self.wrap && g.size().x > cx.content.width() + 1.5 {
+            g = cx.layout_text_elided(&self.text, cx.content.width());
+        }
         let x = match self.align {
             TextAlign::Left => cx.content.left(),
             TextAlign::Center => cx.content.center().x - g.size().x * 0.5,
             TextAlign::Right => cx.content.right() - g.size().x,
         };
-        let y = cx.content.center().y - g.size().y * 0.5;
+        // (text taller than its box - cut at its foot - starts at the top, not above it)
+        let cut = g.size().y > cx.content.height() + 0.5;
+        let y = if cut { cx.content.top() } else { cx.content.center().y - g.size().y * 0.5 };
         let color = cx.look.color;
-        cx.painter.galley(Pos2::new(x, y), g, color);
+        if cut {
+            let clip = cx.content.intersect(cx.painter.clip());
+            cx.painter.with_clip(clip, |p| p.galley(Pos2::new(x, y), g, color));
+        } else {
+            cx.painter.galley(Pos2::new(x, y), g, color);
+        }
     }
     fn hit_test(&self) -> bool {
         false
@@ -308,18 +329,24 @@ impl Element for Checkbox {
     }
     fn layout(&self, s: &mut taffy::Style) {
         s.align_items = Some(taffy::AlignItems::Center);
+        // (a long label wraps under itself rather than running out of its box)
+        s.min_size.width = taffy::Dimension::length(0.0);
     }
-    fn measure(&mut self, cx: &mut MeasureCx<'_>, _k: [Option<f32>; 2], _a: [Option<f32>; 2]) -> Vec2 {
+    fn measure(&mut self, cx: &mut MeasureCx<'_>, known: [Option<f32>; 2], available: [Option<f32>; 2]) -> Vec2 {
         let m = self.mark();
         if self.text.is_empty() {
             return m;
         }
-        let g = cx.layout_text(&self.text, None);
-        Vec2::new(m.x + 10.0 + g.size().x, m.y.max(g.size().y))
+        let wrap = known[0].or(available[0]).map(|w| (w - m.x - 10.0).max(40.0));
+        let g = cx.layout_text(&self.text, wrap);
+        Vec2::new(m.x + 10.0 + g.size().x.ceil() + 1.0, m.y.max(g.size().y))
     }
     fn paint(&mut self, cx: &mut PaintCx<'_>) {
         let m = self.mark();
-        let r = Rect::from_min_size(Pos2::new(cx.content.left(), cx.content.center().y - m.y * 0.5), m);
+        // (the mark beside the label's first line)
+        let line = cx.look.font_size * 1.2;
+        let top = if cx.content.height() > line * 1.5 { cx.content.top() + (line - m.y) * 0.5 } else { cx.content.center().y - m.y * 0.5 };
+        let r = Rect::from_min_size(Pos2::new(cx.content.left(), top), m);
         let accent = cx.theme.selection.to_opaque();
         let on_fill = cx.theme.rules.get("accent").and_then(|r| r.visual.background).unwrap_or(accent);
         let off = cx.theme.rules.get("field").and_then(|r| r.visual.background).unwrap_or(Color32::from_gray(50));
@@ -338,7 +365,7 @@ impl Element for Checkbox {
             }
         }
         if !self.text.is_empty() {
-            let g = cx.layout_text(&self.text, None);
+            let g = cx.layout_text(&self.text, Some((cx.content.width() - m.x - 10.0).max(40.0)));
             let at = Pos2::new(r.right() + 10.0, cx.content.center().y - g.size().y * 0.5);
             let c = cx.look.color;
             cx.painter.galley(at, g, c);

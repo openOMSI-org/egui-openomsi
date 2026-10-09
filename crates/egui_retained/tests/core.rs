@@ -209,3 +209,17 @@ fn a_finger_dragged_over_a_button_scrolls_and_a_tap_clicks() {
     ui.run(input(vec![touch(at, TouchPhase::Start), touch(at + vec2(2.0, 1.0), TouchPhase::Move), touch(at + vec2(2.0, 1.0), TouchPhase::End)]));
     assert_eq!(ui.drain::<Msg>(), vec![Msg::Play]);
 }
+
+#[test]
+fn a_line_of_text_beside_an_icon_keeps_its_width() {
+    let mut ui = Ui::new();
+    let p = page(&mut ui);
+    let col = ui.column(p);
+    let row = ui.row(col);
+    ui.style(row, |s| s.gap = taffy::Size { width: taffy::LengthPercentage::length(8.0), height: taffy::LengthPercentage::length(0.0) });
+    ui.add(row, widgets::Icon::new("keyboard"));
+    let t = ui.add(row, widgets::Text::new("IBIS heading"));
+    ui.run(input(vec![]));
+    let full = { let mut u2 = Ui::new(); let p2 = page(&mut u2); let t2 = u2.add(p2, widgets::Text::new("IBIS heading")); u2.run(input(vec![])); u2.rect(t2).width() };
+    assert!(ui.rect(t).width() >= full - 0.5, "{} vs {}", ui.rect(t).width(), full);
+}

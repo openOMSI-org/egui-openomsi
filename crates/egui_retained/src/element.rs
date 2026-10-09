@@ -178,6 +178,11 @@ impl PaintCx<'_> {
         crate::paint::layout_text(self.fonts, self.ppp, text, self.look.font_id(self.theme), self.look.color, wrap)
     }
 
+    /// Text on one line no wider than `width`, ended in "…" where it does not fit.
+    pub fn layout_text_elided(&mut self, text: &str, width: f32) -> Arc<epaint::Galley> {
+        crate::paint::layout_text_elided(self.fonts, self.ppp, text, self.look.font_id(self.theme), self.look.color, width)
+    }
+
     pub fn repaint_after(&mut self, secs: f32) {
         *self.repaint_after = Some(self.repaint_after.map_or(secs, |s| s.min(secs)));
     }

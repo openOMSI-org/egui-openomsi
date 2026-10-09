@@ -107,3 +107,10 @@ pub fn layout_text(fonts: &mut epaint::Fonts, ppp: f32, text: &str, font: FontId
         None => fonts.with_pixels_per_point(ppp).layout_no_wrap(text.to_owned(), font, color),
     }
 }
+
+/// Text on one line no wider than `width`: what does not fit ends in "…".
+pub fn layout_text_elided(fonts: &mut epaint::Fonts, ppp: f32, text: &str, font: FontId, color: Color32, width: f32) -> Arc<Galley> {
+    let mut job = epaint::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
+    job.wrap = epaint::text::TextWrapping { max_width: width.max(1.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    fonts.with_pixels_per_point(ppp).layout_job(job)
+}
