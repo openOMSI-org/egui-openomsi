@@ -7,6 +7,7 @@ members = [
   "crates/egui_extras",
   "crates/egui_glow",
   "crates/egui_inspection",
+  "crates/egui_retained",
   "crates/egui_kittest",
   "crates/egui-wgpu",
   "crates/egui-winit",
@@ -62,6 +63,7 @@ epaint = { version = "0.35.0", path = "crates/epaint", default-features = false 
 epaint_default_fonts = { version = "0.35.0", path = "crates/epaint_default_fonts" }
 egui = { version = "0.35.0", path = "crates/egui", default-features = false }
 egui-winit = { version = "0.35.0", path = "crates/egui-winit", default-features = false }
+egui_retained = { version = "0.35.0", path = "crates/egui_retained", default-features = false }
 egui_extras = { version = "0.35.0", path = "crates/egui_extras", default-features = false }
 egui-wgpu = { version = "0.35.0", path = "crates/egui-wgpu", default-features = false }
 egui_demo_lib = { version = "0.35.0", path = "crates/egui_demo_lib", default-features = false }

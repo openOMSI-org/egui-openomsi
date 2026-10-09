@@ -1,0 +1,26 @@
+[package]
+name = "egui_retained"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "A retained-mode GUI core on epaint: a persistent widget tree, flexbox/grid layout, bubbling events and repaint-on-change"
+publish = false
+
+[features]
+default = ["winit", "default_fonts"]
+## Translate winit window events into the input of a frame.
+winit = ["dep:winit"]
+## The fonts epaint ships (Ubuntu-Light, Hack, emoji).
+default_fonts = ["epaint/default_fonts"]
+
+[dependencies]
+epaint.workspace = true
+emath.workspace = true
+ecolor.workspace = true
+taffy = { version = "0.10", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "taffy_tree"] }
+log.workspace = true
+winit = { workspace = true, optional = true }
+
+[lints]
+workspace = true
