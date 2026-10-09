@@ -15,6 +15,14 @@ use taffy::prelude::{AvailableSpace, Size, TaffyTree};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(pub(crate) taffy::NodeId);
 
+impl NodeId {
+    /// A node that is not in any tree (a field to fill in later); every call on it does
+    /// nothing.
+    pub fn dangling() -> NodeId {
+        NodeId(taffy::NodeId::from(u64::MAX))
+    }
+}
+
 /// Where a node is painted: the page, then what opens over it (menus, dialogs), then tips.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Layer {
@@ -102,6 +110,8 @@ pub struct Ui {
     dragging: bool,
     focused: Option<NodeId>,
     captured: Option<NodeId>,
+    /// A finger's drag that scrolls: the node it started on and where it was last.
+    touch_scroll: Option<(NodeId, Pos2)>,
     pointer: Option<Pos2>,
     last_click: Option<(NodeId, f64, u32)>,
     /// The nodes in the order they were painted, with what of them is seen (hit-testing
@@ -175,6 +185,7 @@ impl Ui {
             dragging: false,
             focused: None,
             captured: None,
+            touch_scroll: None,
             pointer: None,
             last_click: None,
             order: Vec::new(),
@@ -294,23 +305,45 @@ impl Ui {
         Some(r)
     }
 
+    /// Change the node's element where `f` says it changed something (returns true): only
+    /// then is it laid out and painted again - for keeping a tree in step with an
+    /// application's state every frame without drawing every frame.
+    pub fn update<T: Element>(&mut self, node: NodeId, f: impl FnOnce(&mut T) -> bool) -> bool {
+        let Some(d) = self.data_mut(node) else { return false };
+        let e: &mut dyn Any = &mut *d.element;
+        let Some(t) = e.downcast_mut::<T>() else { return false };
+        let changed = f(t);
+        if changed {
+            let _ = self.tree.mark_dirty(node.0);
+            self.layout_dirty = true;
+            self.repaint = true;
+        }
+        changed
+    }
+
     /// The node's layout, changed by `f` (its size, padding, flex...).
     pub fn style(&mut self, node: NodeId, f: impl FnOnce(&mut taffy::Style)) -> &mut Self {
         if let Some(d) = self.data_mut(node) {
+            let before = d.layout.clone();
             f(&mut d.layout);
-            d.restyle = true;
+            if d.layout != before {
+                d.restyle = true;
+                self.style_dirty = true;
+            }
         }
-        self.style_dirty = true;
         self
     }
 
     /// The node's own visual properties, merged over its classes'.
     pub fn visual(&mut self, node: NodeId, v: Visual) -> &mut Self {
         if let Some(d) = self.data_mut(node) {
+            let before = format!("{:?}", d.visual);
             d.visual.merge(&v);
-            d.restyle = true;
+            if format!("{:?}", d.visual) != before {
+                d.restyle = true;
+                self.style_dirty = true;
+            }
         }
-        self.style_dirty = true;
         self
     }
 
@@ -319,18 +352,21 @@ impl Ui {
             if !d.classes.iter().any(|c| c == class) {
                 d.classes.push(class.to_owned());
                 d.restyle = true;
+                self.style_dirty = true;
             }
         }
-        self.style_dirty = true;
         self
     }
 
     pub fn remove_class(&mut self, node: NodeId, class: &str) -> &mut Self {
         if let Some(d) = self.data_mut(node) {
+            let n = d.classes.len();
             d.classes.retain(|c| c != class);
-            d.restyle = true;
+            if d.classes.len() != n {
+                d.restyle = true;
+                self.style_dirty = true;
+            }
         }
-        self.style_dirty = true;
         self
     }
 
@@ -348,9 +384,9 @@ impl Ui {
             if d.visible != on {
                 d.visible = on;
                 d.restyle = true;
+                self.style_dirty = true;
             }
         }
-        self.style_dirty = true;
         self
     }
 
@@ -358,14 +394,26 @@ impl Ui {
         self.data(node).is_some_and(|d| d.visible)
     }
 
+    /// Whether the node is on the screen: it and every node above it visible.
+    pub fn shown(&self, node: NodeId) -> bool {
+        let mut n = Some(node.0);
+        while let Some(id) = n {
+            if !self.tree.get_node_context(id).is_some_and(|d| d.visible) {
+                return false;
+            }
+            n = self.tree.parent(id);
+        }
+        true
+    }
+
     pub fn set_selected(&mut self, node: NodeId, on: bool) -> &mut Self {
         if let Some(d) = self.data_mut(node) {
             if d.state.selected != on {
                 d.state.selected = on;
                 d.restyle = true;
+                self.style_dirty = true;
             }
         }
-        self.style_dirty = true;
         self
     }
 
@@ -374,9 +422,9 @@ impl Ui {
             if d.state.disabled != on {
                 d.state.disabled = on;
                 d.restyle = true;
+                self.style_dirty = true;
             }
         }
-        self.style_dirty = true;
         self
     }
 
@@ -531,6 +579,11 @@ impl Ui {
     /// The frame should be drawn again (something the tree does not know of changed).
     pub fn request_repaint(&mut self) {
         self.repaint = true;
+    }
+
+    /// Why a frame is due (for finding what keeps an interface drawing).
+    pub fn repaint_reasons(&self) -> String {
+        format!("repaint {} layout {} style {} deferred {}", self.repaint, self.layout_dirty, self.style_dirty, self.deferred.len())
     }
 
     /// Whether something changed since the last frame (draw one).
@@ -971,6 +1024,53 @@ impl Ui {
                 self.captured = None;
             }
             InputEvent::Focus(true) => {}
+            InputEvent::Touch { pos, phase } => self.touch(pos, phase),
+        }
+    }
+
+    /// A finger: down and up is a click; moved further than a tap's slop it scrolls what it
+    /// is over (the press let go without a click) - unless what it pressed holds the
+    /// pointer, which it then drags as the mouse would.
+    fn touch(&mut self, p: Pos2, phase: crate::input::TouchPhase) {
+        use crate::input::TouchPhase as T;
+        const SLOP: f32 = 8.0;
+        match phase {
+            T::Start => {
+                self.touch_scroll = None;
+                self.input_event(InputEvent::PointerMoved(p));
+                self.input_event(InputEvent::PointerButton { pos: p, button: crate::input::Button::Primary, pressed: true });
+            }
+            T::Move => {
+                if let Some((n, last)) = self.touch_scroll {
+                    self.scroll_by(n, p - last);
+                    self.touch_scroll = Some((n, p));
+                    return;
+                }
+                if let Some((n, _, at)) = self.pressed {
+                    if self.captured.is_none() && (p - at).length() > SLOP {
+                        // a scroll, not a press: the press let go of quietly
+                        self.pressed = None;
+                        self.dragging = false;
+                        for a in self.ancestors(Some(n)) {
+                            self.set_state(a, |s| s.pressed = false);
+                        }
+                        self.set_hover(None);
+                        self.scroll_by(n, p - at);
+                        self.touch_scroll = Some((n, p));
+                        return;
+                    }
+                }
+                self.input_event(InputEvent::PointerMoved(p));
+            }
+            T::End | T::Cancel => {
+                if self.touch_scroll.take().is_none() {
+                    let pos = if phase == T::Cancel { Pos2::new(-1e4, -1e4) } else { p };
+                    self.input_event(InputEvent::PointerButton { pos, button: crate::input::Button::Primary, pressed: false });
+                }
+                // (a finger lifted hovers nothing)
+                self.input_event(InputEvent::PointerLeft);
+                self.set_hover(None);
+            }
         }
     }
 
@@ -1213,6 +1313,20 @@ impl Ui {
     pub fn set_icon_source(&mut self, f: impl Fn(&str, u32) -> Option<Vec<u8>> + 'static) {
         self.textures.set_source(Box::new(f));
         self.repaint = true;
+    }
+
+    /// A picture of the application's (an icon from a server, a thumbnail) as a texture the
+    /// interface manages and hands to the renderer with the frame: `rgba` is `size[0]` x
+    /// `size[1]` pixels of four bytes, unmultiplied.
+    pub fn load_image(&mut self, name: &str, size: [usize; 2], rgba: &[u8]) -> TextureId {
+        let img = epaint::ColorImage::from_rgba_unmultiplied(size, rgba);
+        self.repaint = true;
+        self.textures.manager.alloc(name.to_owned(), epaint::ImageData::Color(std::sync::Arc::new(img)), epaint::textures::TextureOptions::LINEAR)
+    }
+
+    /// A picture of [`Ui::load_image`] no longer needed.
+    pub fn free_image(&mut self, id: TextureId) {
+        self.textures.manager.free(id);
     }
 
     pub fn texture_id(&self, user: u64) -> TextureId {

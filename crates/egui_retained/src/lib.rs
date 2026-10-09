@@ -56,7 +56,7 @@ mod ui;
 pub mod widgets;
 
 pub use element::{Element, Event, EventCx, EventKind, MeasureCx, PaintCx};
-pub use input::{Input, InputEvent, Key, Modifiers, PlatformOutput};
+pub use input::{Input, InputEvent, Key, Modifiers, PlatformOutput, TouchPhase};
 pub use paint::{Painter, layout_text};
 pub use style::{Cursor, LayoutPatch, Look, Rule, State, Theme, Visual};
 pub use ui::{Anchor, Frame, Layer, NodeId, ScrollAxes, Ui};

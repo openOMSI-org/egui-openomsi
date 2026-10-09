@@ -187,3 +187,25 @@ fn classes_cascade_and_the_nodes_own_layout_wins() {
     assert!((i.left() - c.left() - 40.0).abs() < 0.5, "own padding wins");
     assert!((i.top() - c.top() - 14.0).abs() < 0.5, "the class's padding where the node set none");
 }
+
+#[test]
+fn a_finger_dragged_over_a_button_scrolls_and_a_tap_clicks() {
+    let mut ui = Ui::new();
+    let p = page(&mut ui);
+    let list = ui.column(p);
+    ui.set_scroll(list, ScrollAxes { x: false, y: true });
+    ui.style(list, |s| s.size = taffy::Size { width: taffy::Dimension::length(200.0), height: taffy::Dimension::length(100.0) });
+    let buttons: Vec<NodeId> = (0..20).map(|_| ui.button(list, "Play", Msg::Play)).collect();
+    ui.run(input(vec![]));
+    let at = ui.rect(buttons[1]).center();
+    let touch = |pos: Pos2, phase: TouchPhase| InputEvent::Touch { pos, phase };
+    // dragged up: the list moves with the finger, no click
+    ui.run(input(vec![touch(at, TouchPhase::Start), touch(at - vec2(0.0, 20.0), TouchPhase::Move), touch(at - vec2(0.0, 40.0), TouchPhase::Move), touch(at - vec2(0.0, 40.0), TouchPhase::End)]));
+    assert!((ui.scroll_offset(list).y - 40.0).abs() < 0.5, "{:?}", ui.scroll_offset(list));
+    assert!(ui.drain::<Msg>().is_empty());
+    // a tap (a finger that hardly moves) is a click
+    ui.run(input(vec![]));
+    let at = ui.rect(buttons[2]).center();
+    ui.run(input(vec![touch(at, TouchPhase::Start), touch(at + vec2(2.0, 1.0), TouchPhase::Move), touch(at + vec2(2.0, 1.0), TouchPhase::End)]));
+    assert_eq!(ui.drain::<Msg>(), vec![Msg::Play]);
+}

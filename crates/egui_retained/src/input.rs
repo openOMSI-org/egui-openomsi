@@ -70,6 +70,18 @@ pub enum InputEvent {
     Paste(String),
     /// The window got or lost the keyboard.
     Focus(bool),
+    /// A finger (the first on the screen): a tap is a click, a drag scrolls - unless what it
+    /// pressed holds the pointer (a slider, a picture turned by dragging).
+    Touch { pos: Pos2, phase: TouchPhase },
+}
+
+/// Where a finger is in its touch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TouchPhase {
+    Start,
+    Move,
+    End,
+    Cancel,
 }
 
 /// Everything since the last frame.
@@ -113,6 +125,8 @@ mod winit_input {
         input: Input,
         modifiers: Modifiers,
         pointer: Option<Pos2>,
+        /// The finger followed.
+        finger: Option<u64>,
     }
 
     impl WinitInput {
@@ -152,19 +166,22 @@ mod winit_input {
                     ev.push(InputEvent::Wheel(d));
                 }
                 WindowEvent::Touch(t) => {
-                    // one finger is the pointer: down, moves, up
+                    // the first finger is the pointer (the others are not followed)
                     let p = Pos2::new(t.location.x as f32 / scale, t.location.y as f32 / scale);
-                    match t.phase {
-                        winit::event::TouchPhase::Started => {
-                            ev.push(InputEvent::PointerMoved(p));
-                            ev.push(InputEvent::PointerButton { pos: p, button: Button::Primary, pressed: true });
+                    let phase = match t.phase {
+                        winit::event::TouchPhase::Started if self.finger.is_none() => {
+                            self.finger = Some(t.id);
+                            TouchPhase::Start
                         }
-                        winit::event::TouchPhase::Moved => ev.push(InputEvent::PointerMoved(p)),
-                        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                            ev.push(InputEvent::PointerButton { pos: p, button: Button::Primary, pressed: false });
-                            ev.push(InputEvent::PointerLeft);
-                        }
+                        _ if self.finger != Some(t.id) => return false,
+                        winit::event::TouchPhase::Started | winit::event::TouchPhase::Moved => TouchPhase::Move,
+                        winit::event::TouchPhase::Ended => TouchPhase::End,
+                        winit::event::TouchPhase::Cancelled => TouchPhase::Cancel,
+                    };
+                    if matches!(phase, TouchPhase::End | TouchPhase::Cancel) {
+                        self.finger = None;
                     }
+                    ev.push(InputEvent::Touch { pos: p, phase });
                 }
                 WindowEvent::ModifiersChanged(m) => {
                     let s = m.state();
@@ -191,6 +208,15 @@ mod winit_input {
                 _ => return false,
             }
             true
+        }
+
+        /// An event made up by the application (a scripted test, a remote control), as if it
+        /// came from the window.
+        pub fn push(&mut self, event: InputEvent) {
+            if let InputEvent::PointerMoved(p) | InputEvent::PointerButton { pos: p, .. } = &event {
+                self.pointer = Some(*p);
+            }
+            self.input.events.push(event);
         }
 
         /// A paste the application read from its clipboard.
