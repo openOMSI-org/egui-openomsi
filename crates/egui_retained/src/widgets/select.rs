@@ -1,6 +1,6 @@
 //! A choice of one of several: a button showing the chosen one that opens a menu over the page.
 
-use super::{Button, Emit, Text, emit_with, lp};
+use super::{Button, Emit, Text, TextAlign, emit_with, lp};
 use crate::element::{Element, Event, EventCx, EventKind, MeasureCx, PaintCx};
 use crate::input::{Button as MouseButton, Key};
 use crate::ui::{Anchor, Layer, ScrollAxes};
@@ -145,8 +145,7 @@ fn open_menu(ui: &mut Ui, select: NodeId) {
     });
     let mut chosen = None;
     for (i, o) in options.iter().enumerate() {
-        let item = ui.add(menu, Button::new(o.clone()).class("menu-item"));
-        ui.style(item, |s| s.justify_content = Some(taffy::JustifyContent::FlexStart));
+        let item = ui.add(menu, Button::new(o.clone()).class("menu-item").align(TextAlign::Left));
         if Some(i) == selected {
             ui.set_selected(item, true);
             chosen = Some(item);

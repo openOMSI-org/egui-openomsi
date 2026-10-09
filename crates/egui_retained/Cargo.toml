@@ -11,6 +11,8 @@ publish = false
 default = ["winit", "default_fonts"]
 ## Translate winit window events into the input of a frame.
 winit = ["dep:winit"]
+## Draw frames with wgpu (egui-wgpu's renderer, without egui's immediate-mode core).
+wgpu = ["dep:egui-wgpu", "dep:wgpu"]
 ## The fonts epaint ships (Ubuntu-Light, Hack, emoji).
 default_fonts = ["epaint/default_fonts"]
 
@@ -21,6 +23,17 @@ ecolor.workspace = true
 taffy = { version = "0.10", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "taffy_tree"] }
 log.workspace = true
 winit = { workspace = true, optional = true }
+egui-wgpu = { workspace = true, optional = true }
+wgpu = { workspace = true, optional = true }
+
+[dev-dependencies]
+pollster = "0.4"
+png = "0.18"
+wgpu = { workspace = true, features = ["metal", "vulkan", "dx12", "gles", "wgsl"] }
+
+[[example]]
+name = "gallery"
+required-features = ["wgpu"]
 
 [lints]
 workspace = true

@@ -684,7 +684,9 @@ impl Ui {
             let target = visual.resolve(d.state, &theme.defaults);
             if target != d.look {
                 let size_changed = target.font_size != d.look.font_size || target.font != d.look.font || target.strong != d.look.strong;
-                if target.transition > 0.0 && self.time > 0.0 && !size_changed {
+                // (a node not drawn yet starts in its look: no fade in from the theme's defaults)
+                let shown = d.rect != Rect::NOTHING;
+                if target.transition > 0.0 && shown && !size_changed {
                     d.from = Some((d.look.clone(), self.time));
                 }
                 d.look = target;
